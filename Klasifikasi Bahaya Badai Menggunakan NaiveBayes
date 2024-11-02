@@ -1,1 +1,150 @@
 
+const int potPin1 = A0; // Kecepatan Angin
+const int potPin2 = A1; // Gelombang Laut
+const int potPin3 = A2; // Suhu Udara
+const int potPin4 = A3; // Kelembaban Udara
+
+// Fungsi Gaussian Probability Density Function (PDF)
+float pDensityFunction(float mean, float stdDev, float value) {
+  return (1.0 / (stdDev * sqrt(2.0 * PI))) * exp(-0.5 * pow((value - mean) / stdDev, 2));
+}
+
+void setup() {
+  // Inisialisasi komunikasi Serial pada baud rate 9600
+  Serial.begin(9600);
+}
+
+void loop() {
+  // Membaca nilai dari masing-masing potensiometer
+  int potValue1 = analogRead(potPin1);
+  int potValue2 = analogRead(potPin2);
+  int potValue3 = analogRead(potPin3);
+  int potValue4 = analogRead(potPin4);
+
+  // Definisi kategori untuk masing-masing kondisi
+  String kecepatanAngin[] = {"Lambat", "Sedang", "Kencang"};
+  String gelombangLaut[] = {"Tenang", "Agak Berombak", "Tinggi"};
+  String kategoriSuhuUdara[] = {"Dingin", "Normal", "Panas"};
+  String kategoriKelembabanUdara[] = {"Kering", "Normal", "Lembab"};
+
+  float suhuUdaraMin = 20.0;
+  float suhuUdaraMax = 40.0;
+  float kelembabanUdaraMin = 40.0;
+  float kelembabanUdaraMax = 100.0;
+
+  // Mendapatkan kategori berdasarkan nilai potensiometer
+  int kategoriKecepatanAnginIndex = map(potValue1, 0, 1023, 0, 2);
+  int kategoriGelombangLautIndex = map(potValue2, 0, 1023, 0, 2);
+  float suhuUdara = map(potValue3, 0, 1023, suhuUdaraMin, suhuUdaraMax);
+  float kelembabanUdara = map(potValue4, 0, 1023, kelembabanUdaraMin, kelembabanUdaraMax);
+
+  int kategoriSuhuUdaraIndex;
+  if (suhuUdara < 25.0) {
+    kategoriSuhuUdaraIndex = 0; // Dingin
+  } else if (suhuUdara <= 35.0) {
+    kategoriSuhuUdaraIndex = 1; // Normal
+  } else {
+    kategoriSuhuUdaraIndex = 2; // Panas
+  }
+
+  int kategoriKelembabanUdaraIndex;
+  if (kelembabanUdara < 50.0) {
+    kategoriKelembabanUdaraIndex = 0; // Kering
+  } else if (kelembabanUdara <= 80.0) {
+    kategoriKelembabanUdaraIndex = 1; // Normal
+  } else {
+    kategoriKelembabanUdaraIndex = 2; // Lembab
+  }
+
+  // Probabilitas prior berdasarkan data dari Excel
+  const float priorAman = 0.4;    // Misalnya
+  const float priorWaspada = 0.28; // Misalnya
+  const float priorBerbahaya = 0.32; // Misalnya
+
+  // Probabilitas bersyarat untuk kecepatan angin dan gelombang laut berdasarkan kategori
+  float pKecepatanAnginAman[3] = {0.7, 0.2, 0.1};   // Lambat, Sedang, Cepat
+  float pKecepatanAnginWaspada[3] = {0.2, 0.5, 0.3}; // Lambat, Sedang, Cepat
+  float pKecepatanAnginBerbahaya[3] = {0.1, 0.3, 0.6}; // Lambat, Sedang, Cepat
+
+  float pGelombangLautAman[3] = {0.8, 0.15, 0.05};  // Tenang, Agak Berombak, Berombak
+  float pGelombangLautWaspada[3] = {0.15, 0.5, 0.35}; // Tenang, Agak Berombak, Berombak
+  float pGelombangLautBerbahaya[3] = {0.05, 0.3, 0.65}; // Tenang, Agak Berombak, Berombak
+
+  // Parameter Gaussian untuk suhu udara
+  float meanSuhuUdaraAman = 25.0;
+  float stdDevSuhuUdaraAman = 5.0;
+  float meanSuhuUdaraWaspada = 30.0;
+  float stdDevSuhuUdaraWaspada = 5.0;
+  float meanSuhuUdaraBerbahaya = 35.0;
+  float stdDevSuhuUdaraBerbahaya = 5.0;
+
+  // Parameter Gaussian untuk kelembaban udara
+  float meanKelembabanUdaraAman = 60.0;
+  float stdDevKelembabanUdaraAman = 10.0;
+  float meanKelembabanUdaraWaspada = 70.0;
+  float stdDevKelembabanUdaraWaspada = 10.0;
+  float meanKelembabanUdaraBerbahaya = 80.0;
+  float stdDevKelembabanUdaraBerbahaya = 10.0;
+
+  // Hitung probabilitas bersyarat untuk tiap atribut
+  float pSuhuUdaraAman = pDensityFunction(meanSuhuUdaraAman, stdDevSuhuUdaraAman, suhuUdara);
+  float pSuhuUdaraWaspada = pDensityFunction(meanSuhuUdaraWaspada, stdDevSuhuUdaraWaspada, suhuUdara);
+  float pSuhuUdaraBerbahaya = pDensityFunction(meanSuhuUdaraBerbahaya, stdDevSuhuUdaraBerbahaya, suhuUdara);
+
+  float pKelembabanUdaraAman = pDensityFunction(meanKelembabanUdaraAman, stdDevKelembabanUdaraAman, kelembabanUdara);
+  float pKelembabanUdaraWaspada = pDensityFunction(meanKelembabanUdaraWaspada, stdDevKelembabanUdaraWaspada, kelembabanUdara);
+  float pKelembabanUdaraBerbahaya = pDensityFunction(meanKelembabanUdaraBerbahaya, stdDevKelembabanUdaraBerbahaya, kelembabanUdara);
+
+  // Hitung probabilitas posterior
+  float posteriorAman = priorAman;
+  posteriorAman *= pKecepatanAnginAman[kategoriKecepatanAnginIndex];
+  posteriorAman *= pGelombangLautAman[kategoriGelombangLautIndex];
+  posteriorAman *= pSuhuUdaraAman;
+  posteriorAman *= pKelembabanUdaraAman;
+
+  float posteriorWaspada = priorWaspada;
+  posteriorWaspada *= pKecepatanAnginWaspada[kategoriKecepatanAnginIndex];
+  posteriorWaspada *= pGelombangLautWaspada[kategoriGelombangLautIndex];
+  posteriorWaspada *= pSuhuUdaraWaspada;
+  posteriorWaspada *= pKelembabanUdaraWaspada;
+
+  float posteriorBerbahaya = priorBerbahaya;
+  posteriorBerbahaya *= pKecepatanAnginBerbahaya[kategoriKecepatanAnginIndex];
+  posteriorBerbahaya *= pGelombangLautBerbahaya[kategoriGelombangLautIndex];
+  posteriorBerbahaya *= pSuhuUdaraBerbahaya;
+  posteriorBerbahaya *= pKelembabanUdaraBerbahaya;
+
+  // Normalisasi probabilitas posterior
+  float sumPosteriors = posteriorAman + posteriorWaspada + posteriorBerbahaya;
+  posteriorAman /= sumPosteriors;
+  posteriorWaspada /= sumPosteriors;
+  posteriorBerbahaya /= sumPosteriors;
+
+  // Prediksi kelas berdasarkan probabilitas posterior
+  String prediksiKeamanan;
+  if (posteriorAman > posteriorWaspada && posteriorAman > posteriorBerbahaya) {
+    prediksiKeamanan = "Aman";
+  } else if (posteriorWaspada > posteriorAman && posteriorWaspada > posteriorBerbahaya) {
+    prediksiKeamanan = "Waspada";
+  } else {
+    prediksiKeamanan = "Berbahaya";
+  }
+
+  // Tampilkan hasil pada Serial Monitor
+  Serial.print("Kecepatan Angin: ");
+  Serial.println(kecepatanAngin[kategoriKecepatanAnginIndex]);
+
+  Serial.print("Gelombang Laut: ");
+  Serial.println(gelombangLaut[kategoriGelombangLautIndex]);
+
+  Serial.print("Suhu Udara: ");
+  Serial.println(kategoriSuhuUdara[kategoriSuhuUdaraIndex]);
+
+  Serial.print("Kelembaban Udara: ");
+  Serial.println(kategoriKelembabanUdara[kategoriKelembabanUdaraIndex]);
+
+  Serial.print("Prediksi Keamanan: ");
+  Serial.println(prediksiKeamanan);
+
+  delay(1000);
+}
